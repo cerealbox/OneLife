@@ -20,6 +20,10 @@ class GamePage : public PageComponent {
         virtual void joyDPadUp(void) {}
         virtual void joyRudder(int rudder, short pressure) {}
         virtual void joyThumbstick(int stick, short x, short y) {}
+        virtual void getScreenCenterPlayerOffset(int* X, int* Y) {
+            *X = 0;
+            *Y = 0;
+        }
 
         virtual ~GamePage();
         

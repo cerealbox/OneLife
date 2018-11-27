@@ -305,3 +305,8 @@ void LivingLifePage::joyStep(void) {
 
     }
 }
+
+void LivingLifePage::getScreenCenterPlayerOffset(int* X, int* Y) {
+    *X = screenCenterPlayerOffsetX;
+    *Y = screenCenterPlayerOffsetY;
+}

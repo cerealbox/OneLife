@@ -422,6 +422,7 @@ class LivingLifePage : public GamePage {
         virtual void joyRudder(int rudder, short pressure);
         virtual void joyThumbstick(int stick, short x, short y);
         void joyStep(void);
+        virtual void getScreenCenterPlayerOffset(int* X, int* Y);
 
         virtual void pointerMove( float inX, float inY );
         virtual void pointerDown( float inX, float inY );

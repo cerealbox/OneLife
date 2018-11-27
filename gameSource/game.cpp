@@ -2108,6 +2108,15 @@ void joyThumbstick(int stick, short x, short y) {
     if (currentGamePage != NULL)
         currentGamePage->joyThumbstick(stick, x, y);
 }
+void getScreenCenterPlayerOffset(int* X, int* Y) {
+    if (currentGamePage != NULL) {
+        currentGamePage->getScreenCenterPlayerOffset(X, Y);
+    } else {
+        *X = 0;
+        *Y = 0;
+    }
+}
+
 
 void pointerDown( float inX, float inY ) {
 
