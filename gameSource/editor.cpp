@@ -1508,6 +1508,10 @@ void joyDPadDown(int dir) {}
 void joyDPadUp(void) {}
 void joyRudder(int rudder, short pressure) {}
 void joyThumbstick(int stick, short x, short y) {}
+void getScreenCenterPlayerOffset(int* X, int* Y) {
+    *X = 0;
+    *Y = 0;
+}
 
 
 void pointerDown( float inX, float inY ) {
