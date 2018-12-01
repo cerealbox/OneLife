@@ -3,13 +3,60 @@ This file only list changes to game code.  Changes to content can be found here:
 http://onehouronelife.com/updateLog.php
 
 
-Version 173     ???
+
+Version 177     ???
+
+--Better client behavior in case of real, 2-way connection break with server.
+  If we haven't heard anything from server for 10+ seconds, and our action has
+  been pending for 5+ seconds (bouncing), then declare connection broken.  Old
+  behavior caused it to wait until receiving some kind of message from server
+  before attempting PING/PONG, so it would wait forever if connection was truly
+  broken.  Note that a truly, truly broken connection would eventually be
+  detected in the network layer, but this can take a long time.  We still need
+  to deal with 'soft breaks' in a sensible way.
+
+--Improved a bunch of little rough edges in the tutorial.  The camera-freezing
+  section is now much more clear and fool-proof.  There are multiple warnings
+  about the last optional area NOT helping you to pass the tutorial (at least
+  two recent Steam reviewers got stuck trying to forge an axe, thinking that
+  was required).
+
+--Finally fixed glitch that causes other player's head to be behind the object
+  in the tile to the north of them (move truncation bug).
+ 
+
+
+
+Server Fixes
+
+--Server now clears any objects with names that start with @ at startup
+  (hotfix for wayward pile category objects in map).
+
+--Fixed so that items contained in baby clothing aren't lost when baby /DIEs.
+  Fixes #141
+
+
+
+
+Version 174     2018-November-29
 
 --Fixed overlaps in UI of scene editor.
 
 --Scene editor move timing now based on frame count instead of wall-clock time,
   so move timing is perfect even when running slower (like when outputting
   frames).
+
+--SpriteTrim editor now supports freehand trim.
+
+--Huge improvement to mouse interface:  when clicking a non-permanent object
+  (that can be picked up), where a bare-hand action also applies, left/right
+  buttons now differentiate.  Left to pick up, and right to execute the
+  bare-hand action.  This allows single-object stacks (like tortillas, sliced
+  bread, plates) to be be picked up (left click) or have the top item removed
+  (right click). Fixes jasonrohrer/OneLifeData7#53
+
+--Fixed edge case of sprite subset detection when zero layers don't match
+  (fixes shaft creation sound playing when two long shafts are pulled apart).
 
 
 
@@ -18,6 +65,11 @@ Server Fixes
 --Shrank next Eve jump to 250, down from 500.  Smaller Eve spiral, more likely
   to be interaction between villages.
 
+--Server skips sending apocalypse check to reflector if apocalypse disabled
+  locally.
+
+--Fixed so that yellow fever doesn't heal wounds (nor does one kind of animal
+  wound replace another).  Fixes #142.
 
 
 

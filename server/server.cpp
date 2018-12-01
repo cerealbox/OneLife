@@ -5975,17 +5975,23 @@ void apocalypseStep() {
         if( apocalypseRequest == NULL &&
             curTime - lastRemoteApocalypseCheckTime > 
             remoteApocalypseCheckInterval ) {
-            printf( "Checking for remote apocalypse\n" );
-            
+
             lastRemoteApocalypseCheckTime = curTime;
+
+            // don't actually send request to reflector if apocalypse
+            // not possible locally
+            if( SettingsManager::getIntSetting( "apocalypsePossible", 0 ) ) {
+
+                printf( "Checking for remote apocalypse\n" );
             
-            char *url = autoSprintf( "%s?action=check_apocalypse", 
-                                     reflectorURL );
+                char *url = autoSprintf( "%s?action=check_apocalypse", 
+                                         reflectorURL );
         
-            apocalypseRequest =
-                new WebRequest( "GET", url, NULL );
+                apocalypseRequest =
+                    new WebRequest( "GET", url, NULL );
             
-            delete [] url;
+                delete [] url;
+                }
             }
         else if( apocalypseRequest != NULL ) {
             int result = apocalypseRequest->step();
@@ -7641,6 +7647,17 @@ int main() {
                 if( !riding &&
                     curOverObj->permanent && curOverObj->deadlyDistance > 0 ) {
                     
+                    char wasSick = false;
+                                        
+                    if( nextPlayer->holdingID > 0 &&
+                        strstr(
+                            getObject( nextPlayer->holdingID )->
+                            description,
+                            "sick" ) != NULL ) {
+                        wasSick = true;
+                        }
+
+
                     addDeadlyMapSpot( curPos );
                     
                     setDeathReason( nextPlayer, 
@@ -7656,7 +7673,10 @@ int main() {
                     nextPlayer->errorCauseString =
                         "Player killed by permanent object";
                     
-                    if( ! nextPlayer->dying ) {
+                    if( ! nextPlayer->dying || wasSick ) {
+                        // if was sick, they had a long stagger
+                        // time set, so cutting it in half makes no sense
+                        
                         int staggerTime = 
                             SettingsManager::getIntSetting(
                                 "deathStaggerTime", 20 );
@@ -7699,7 +7719,11 @@ int main() {
                         setMapObject( curPos.x, curPos.y, r->newActor );
 
                         // new target specifies wound
-                        if( r->newTarget > 0 ) {
+                        // but never replace an existing wound
+                        // death time is shortened above
+                        // however, wounds can replace sickness 
+                        if( r->newTarget > 0 &&
+                            ( ! nextPlayer->holdingWound || wasSick ) ) {
                             // don't drop their wound
                             if( nextPlayer->holdingID != 0 &&
                                 ! nextPlayer->holdingWound ) {
@@ -8042,6 +8066,34 @@ int main() {
                                             // put clothing in parent's hand
                                             // and then drop
                                             parent->holdingID = cObj->id;
+                                            if( nextPlayer->
+                                                clothingContained[c].
+                                                size() > 0 ) {
+                                                
+                                                parent->numContained =
+                                                    nextPlayer->
+                                                    clothingContained[c].
+                                                    size();
+                                                
+                                                parent->containedIDs =
+                                                    nextPlayer->
+                                                    clothingContained[c].
+                                                    getElementArray();
+                                                parent->containedEtaDecays =
+                                                    nextPlayer->
+                                                    clothingContainedEtaDecays
+                                                    [c].
+                                                    getElementArray();
+                                                
+                                                parent->subContainedIDs
+                                                    = new 
+                                                    SimpleVector<int>[
+                                                    parent->numContained ];
+                                                parent->subContainedEtaDecays
+                                                    = new 
+                                                    SimpleVector<timeSec_t>[
+                                                    parent->numContained ];
+                                                }
                                             
                                             handleDrop( 
                                                 parentPos.x, parentPos.y, 
