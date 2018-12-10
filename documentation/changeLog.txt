@@ -4,6 +4,21 @@ http://onehouronelife.com/updateLog.php
 
 
 
+Version 180     ???
+
+--noFlip object property now affects object drawing deeply, even when object is
+  contained in a flipped container.
+
+
+
+Server Fixes
+
+--randSource for probability transitions (fishing and oil) now seeded with time
+  instead of fixed seed, so that repeated short-run server testing allows me to
+  get a feel for a given probability distribution.
+
+
+
 Version 177     2018-November-30
 
 --Better client behavior in case of real, 2-way connection break with server.
