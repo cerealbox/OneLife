@@ -120,6 +120,8 @@ static char savingSpeech = false;
 static char savingSpeechColor = false;
 static char savingSpeechMask = false;
 
+static char savingSpeechNumber = 1;
+
 
 static double emotDuration = 10;
 
@@ -1867,7 +1869,6 @@ LivingLifePage::LivingLifePage()
                      "ABCDEFGHIJKLMNOPQRSTUVWXYZ.-,'?!/ " ),
           mDeathReason( NULL ),
           mShowHighlights( true ),
-          mSkipDrawingWorkingArea( NULL ),
           mUsingSteam( false ),
           mZKeyDown( false ) {
 
@@ -2416,10 +2417,6 @@ LivingLifePage::~LivingLifePage() {
         delete [] mGraveInfo.getElement(i)->relationName;
         }
     mGraveInfo.deleteAll();
-
-    if( mSkipDrawingWorkingArea != NULL ) {
-        delete [] mSkipDrawingWorkingArea;
-        }
     }
 
 
@@ -2560,6 +2557,10 @@ SimpleVector<char*> *splitLines( const char *inString,
     }
 
 
+static Image *speechColorImage = NULL;
+static Image *speechMaskImage = NULL;
+
+
 
 // forces uppercase
 void LivingLifePage::drawChalkBackgroundString( doublePair inPos, 
@@ -2613,12 +2614,12 @@ void LivingLifePage::drawChalkBackgroundString( doublePair inPos,
     char colorOnly = false;
     
     if( savingSpeech && savingSpeechColor && inFade == 1.0 ) {
-        drawSquare( inPos, 512 );
+        drawSquare( inPos, 1024 );
         colorOnly = true;
         }
     else if( savingSpeech && savingSpeechMask && inFade == 1.0 ) {
         setDrawColor( 0, 0, 0, 1.0 );
-        drawSquare( inPos, 512 );
+        drawSquare( inPos, 1024 );
         setDrawColor( 1, 1, 1, 1 );
         maskOnly = true;
         }
@@ -2701,16 +2702,107 @@ void LivingLifePage::drawChalkBackgroundString( doublePair inPos,
 
 
     if( colorOnly ) {
-        saveScreenShot( "speechColor" );
+        saveScreenShot( "speechColor", &speechColorImage );
         savingSpeechColor = false;
         savingSpeechMask = true;
         }
     else if( maskOnly ) {
-        saveScreenShot( "speechMask" );
+        saveScreenShot( "speechMask", &speechMaskImage );
         savingSpeechMask = false;
         savingSpeech = false;
         }
+    
+    if( speechColorImage != NULL && speechMaskImage != NULL ) {
+        // both screen shot requests are done
+
+        Image *subColor = speechColorImage->getSubImage( 0, 0, 1280, 500 );
+        Image *subMask = speechMaskImage->getSubImage( 0, 0, 1280, 500 );
         
+        int w = subColor->getWidth();
+        int h = subColor->getHeight();
+        
+        Image blend( w, h, 4, true );
+        blend.paste( subColor );
+        double *alpha = blend.getChannel( 3 );
+        
+        memcpy( alpha, subMask->getChannel( 0 ),
+                w * h * sizeof( double ) );
+        
+        int minX = w -1;
+        int maxX = 0;
+        int minY = h -1;
+        int maxY = 0;
+        
+        for( int y=0; y<h; y++ ) {
+            for( int x=0; x<w; x++ ) {
+                if( alpha[ y * w + x ] > 0 ) {
+                    
+                    if( x < minX ) {
+                        minX = x;
+                        }
+                    if( x > maxX ) {
+                        maxX = x;
+                        }
+
+                    if( y < minY ) {
+                        minY = y;
+                        }
+                    if( y > maxY ) {
+                        maxY = y;
+                        }
+                    }
+                }
+            }
+        
+        // expand 1 pixel to be safe
+        if( minX > 0 ) {
+            minX --;
+            }
+        if( minY > 0 ) {
+            minY --;
+            }
+        if( maxX < w - 1 ) {
+            maxX ++;
+            }
+        if( maxY < h - 1 ) {
+            maxY ++;
+            }
+        
+
+        Image *trimmed = blend.getSubImage( minX, minY,
+                                            maxX - minX,
+                                            maxY - minY );
+                
+        File screenShots( NULL, "screenShots" );
+        
+        char *fileName = autoSprintf( "speechBlend%04d.tga", 
+                                      savingSpeechNumber );
+        savingSpeechNumber++;
+        
+        File *tgaFile = screenShots.getChildFile( fileName );
+        
+        delete [] fileName;
+
+        char *tgaPath = tgaFile->getFullFileName();
+
+        delete tgaFile;
+
+        writeTGAFile( tgaPath, trimmed );
+        
+        delete [] tgaPath;
+        
+        delete trimmed;
+        
+
+        delete subColor;
+        delete subMask;
+
+
+        delete speechColorImage;
+        speechColorImage = NULL;
+        delete speechMaskImage;
+        speechMaskImage = NULL;
+        }
     }
 
 
@@ -2805,7 +2897,8 @@ void LivingLifePage::handleAnimSound( int inObjectID, double inAge,
 
 void LivingLifePage::drawMapCell( int inMapI, 
                                   int inScreenX, int inScreenY,
-                                  char inHighlightOnly ) {
+                                  char inHighlightOnly,
+                                  char inNoTimeEffects ) {
             
     int oID = mMap[ inMapI ];
 
@@ -2817,7 +2910,7 @@ void LivingLifePage::drawMapCell( int inMapI,
         
         double oldFrameCount = mMapAnimationFrameCount[ inMapI ];
 
-        if( !mapPullMode ) {
+        if( !mapPullMode && !inHighlightOnly && !inNoTimeEffects ) {
             
             if( mMapCurAnimType[ inMapI ] == moving ) {
                 double animSpeed = 1.0;
@@ -3041,7 +3134,7 @@ void LivingLifePage::drawMapCell( int inMapI,
             }
         
 
-        if( !mapPullMode && !inHighlightOnly ) {
+        if( !mapPullMode && !inHighlightOnly && !inNoTimeEffects ) {
             handleAnimSound( oID, 0, mMapCurAnimType[ inMapI ], oldFrameCount, 
                              mMapAnimationFrameCount[ inMapI ],
                              pos.x / CELL_D,
@@ -3342,6 +3435,10 @@ ObjectAnimPack LivingLifePage::drawLiveObject(
         targetX = inObj->actionTargetX;
         targetY = inObj->actionTargetY;
         }
+    else {
+        setClothingHighlightFades( inObj->clothingHighlightFades );
+        }
+    
                 
     if( inObj->curAnim != eating &&
         inObj->lastAnim != eating &&
@@ -3680,7 +3777,15 @@ ObjectAnimPack LivingLifePage::drawLiveObject(
         
         double frozenRotHeldTimeVal = frameRateFactor * 
             inObj->heldFrozenRotFrameCount / 60.0;
+
         
+        char heldFlip = inObj->holdingFlip;
+
+        if( heldObject != NULL &&
+            heldObject->noFlip ) {
+            heldFlip = false;
+            }
+
 
         if( !alreadyDrawnPerson ) {
             doublePair personPos = pos;
@@ -3716,7 +3821,57 @@ ObjectAnimPack LivingLifePage::drawLiveObject(
 
             if( ! inObj->tempAgeOverrideSet )
                 setAnimationEmotion( inObj->currentEmot );
+
             
+            if( heldObject->anySpritesBehindPlayer ) {
+                // draw part that is behind player
+                prepareToSkipSprites( heldObject, true );
+                
+                if( inObj->numContained == 0 ) {
+                    drawObjectAnim(
+                        inObj->holdingID, curHeldType, 
+                        heldTimeVal,
+                        heldAnimFade,
+                        fadeTargetHeldType,
+                        targetHeldTimeVal,
+                        frozenRotHeldTimeVal,
+                        &( inObj->heldFrozenRotFrameCountUsed ),
+                        endAnimType,
+                        endAnimType,
+                        heldObjectDrawPos,
+                        holdRot,
+                        false,
+                        heldFlip, -1, false, false, false,
+                        getEmptyClothingSet(), NULL,
+                        0, NULL, NULL );
+                    }
+                else {
+                    drawObjectAnim( 
+                        inObj->holdingID, curHeldType, 
+                        heldTimeVal,
+                        heldAnimFade,
+                        fadeTargetHeldType,
+                        targetHeldTimeVal,
+                        frozenRotHeldTimeVal,
+                        &( inObj->heldFrozenRotFrameCountUsed ),
+                        endAnimType,
+                        endAnimType,
+                        heldObjectDrawPos,
+                        holdRot,
+                        false,
+                        heldFlip,
+                        -1, false, false, false,
+                        getEmptyClothingSet(),
+                        NULL,
+                        inObj->numContained,
+                        inObj->containedIDs,
+                        inObj->subContainedIDs );
+                    }
+                
+                restoreSkipDrawing( heldObject );
+                }
+            
+
             // rideable object
             holdingPos =
                 drawObjectAnim( inObj->displayID, 2, curType, 
@@ -3755,14 +3910,6 @@ ObjectAnimPack LivingLifePage::drawLiveObject(
             
             heldTimeVal = frameRateFactor * 
                 inObj->lastHeldAnimationFrameCount / 60.0;
-            }
-        
-        char heldFlip = inObj->holdingFlip;
-        
-
-        if( heldObject != NULL &&
-            heldObject->noFlip ) {
-            heldFlip = false;
             }
         
                     
@@ -3903,6 +4050,10 @@ ObjectAnimPack LivingLifePage::drawLiveObject(
         inSpeakersPos->push_back( pos );
         }
 
+    if( inObj->id == ourID ) {
+        setClothingHighlightFades( NULL );
+        }
+    
     return returnPack;
     }
 
@@ -5148,7 +5299,10 @@ void LivingLifePage::draw( doublePair inViewCenter,
                     
                     // draw only behind layers now
                     prepareToSkipSprites( o, true );
-                    drawMapCell( mapI, screenX, screenY );
+                    drawMapCell( mapI, screenX, screenY, false, 
+                                 // no time effects, because we'll draw
+                                 // again later
+                                 true );
                     restoreSkipDrawing( o );
                     }
                 
@@ -5429,7 +5583,24 @@ void LivingLifePage::draw( doublePair inViewCenter,
                     if( ! o->heldPosOverride ) {
                         // not sliding into place
                         // draw it now
+                        
+                        char skippingSome = false;
+                        if( heldPack.inObjectID > 0 &&
+                            getObject( heldPack.inObjectID )->rideable &&
+                            getObject( heldPack.inObjectID )->
+                            anySpritesBehindPlayer ) {
+                            skippingSome = true;
+                            }
+                        if( skippingSome ) {
+                            prepareToSkipSprites( 
+                                getObject( heldPack.inObjectID ),
+                                false );
+                            }
                         drawObjectAnim( heldPack );
+                        if( skippingSome ) {
+                            restoreSkipDrawing( 
+                                getObject( heldPack.inObjectID ) );
+                            }
                         }
                     else {
                         heldToDrawOnTop.push_back( heldPack );
@@ -7613,47 +7784,6 @@ void dropPendingReceivedMessagesRegardingID( LiveObject *inPlayer,
 
 
 
-void LivingLifePage::prepareToSkipSprites( ObjectRecord *inObject, 
-                                          char inDrawBehind ) {
-    if( mSkipDrawingWorkingArea != NULL ) {
-        if( mSkipDrawingWorkingAreaSize < inObject->numSprites ) {
-            delete [] mSkipDrawingWorkingArea;
-            mSkipDrawingWorkingArea = NULL;
-            
-            mSkipDrawingWorkingAreaSize = 0;
-            }
-        }
-    if( mSkipDrawingWorkingArea == NULL ) {
-        mSkipDrawingWorkingAreaSize = inObject->numSprites;
-        mSkipDrawingWorkingArea = new char[ mSkipDrawingWorkingAreaSize ];
-        }
-    
-    memcpy( mSkipDrawingWorkingArea, 
-            inObject->spriteSkipDrawing, inObject->numSprites );
-    
-    if( ! inDrawBehind ) {
-        for( int i=0; i< inObject->numSprites; i++ ) {
-            
-            if( inObject->spriteBehindPlayer[i] && ! inDrawBehind ) {
-                inObject->spriteSkipDrawing[i] = true;
-                }
-            else if( ! inObject->spriteBehindPlayer[i] && inDrawBehind ) {
-                inObject->spriteSkipDrawing[i] = true;
-                }
-            }
-        }
-    }
-
-    
-    
-void LivingLifePage::restoreSkipDrawing( ObjectRecord *inObject ) {
-    memcpy( inObject->spriteSkipDrawing, mSkipDrawingWorkingArea,
-            inObject->numSprites );
-    }
-
-
-
-
 void LivingLifePage::applyReceiveOffset( int *inX, int *inY ) {
     if( mMapGlobalOffsetSet ) {
         *inX -= mMapGlobalOffset.x;
@@ -9100,6 +9230,24 @@ void LivingLifePage::step() {
             }
         else {
             mHomeSlipPosTargetOffset.y = mHomeSlipHideOffset.y;
+            }
+
+        int cm = ourObject->currentMouseOverClothingIndex;
+        if( cm != -1 ) {
+            ourObject->clothingHighlightFades[ cm ] 
+                += 0.2 * frameRateFactor;
+            if( ourObject->clothingHighlightFades[ cm ] >= 1 ) {
+                ourObject->clothingHighlightFades[ cm ] = 1.0;
+                }
+            }
+        for( int c=0; c<NUM_CLOTHING_PIECES; c++ ) {
+            if( c != cm ) {
+                ourObject->clothingHighlightFades[ c ]
+                    -= 0.1 * frameRateFactor;
+                if( ourObject->clothingHighlightFades[ c ] < 0 ) {
+                    ourObject->clothingHighlightFades[ c ] = 0;
+                    }
+                }
             }
         }
 
@@ -11409,6 +11557,13 @@ void LivingLifePage::step() {
                 o.heldFrozenRotFrameCountUsed = false;
                 o.clothing = getEmptyClothingSet();
                 
+                o.currentMouseOverClothingIndex = -1;
+                
+                for( int c=0; c<NUM_CLOTHING_PIECES; c++ ) {
+                    o.clothingHighlightFades[c] = 0;
+                    }
+                
+
                 o.somePendingMessageIsMoreMovement = false;
 
                 
@@ -16819,6 +16974,10 @@ void LivingLifePage::pointerMove( float inX, float inY ) {
         }
 
     char overNothing = true;
+
+    LiveObject *ourLiveObject = getOurLiveObject();
+
+    ourLiveObject->currentMouseOverClothingIndex = -1;
     
     if( destID == 0 ) {
         if( p.hitSelf ) {
@@ -16830,7 +16989,6 @@ void LivingLifePage::pointerMove( float inX, float inY ) {
             
             overNothing = false;
             
-            LiveObject *ourLiveObject = getOurLiveObject();
             
             if( p.hitClothingIndex != -1 ) {
                 if( p.hitSlotIndex != -1 ) {
@@ -16844,6 +17002,9 @@ void LivingLifePage::pointerMove( float inX, float inY ) {
                                          p.hitClothingIndex );
                     mCurMouseOverID = c->id;
                     }
+                
+                ourLiveObject->currentMouseOverClothingIndex =
+                    p.hitClothingIndex;
                 }
             }
         if( p.hitOtherPerson ) {
