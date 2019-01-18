@@ -816,11 +816,12 @@ class LivingLifePage : public GamePage {
 
         void clearLiveObjects();
         
+        // inSpeaker can be NULL
         void drawChalkBackgroundString( doublePair inPos, 
                                         const char *inString,
                                         double inFade,
                                         double inMaxWidth,
-                                        LiveObject *inSpeaker,
+                                        LiveObject *inSpeaker = NULL,
                                         int inForceMinChalkBlots = -1 );
         
 
