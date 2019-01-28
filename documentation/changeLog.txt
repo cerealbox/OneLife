@@ -3,6 +3,57 @@ This file only list changes to game code.  Changes to content can be found here:
 http://onehouronelife.com/updateLog.php
 
 
+
+Version 195     ???
+
+--Changed projection for drawn mouse pointer (to further fix behavior on
+  ultrawidescreen).
+
+
+
+Server Fixes
+
+--Reflector changed so that server assignment is not sticky for a given email
+  address.  Each new life is a random re-roll among available servers.
+
+--Added birth location offsets to AM receiver message positions.
+
+--Reflector fixed so that offline servers aren't counted when summing current
+  active server totals.
+
+--Reflector now picks from weighted distribution of actually-alive set of
+  servers, if some of the servers in the active set are offline.  Last-ditch
+  effort code added to find SOME server for the player, if the weighted picking
+  fails for whatever reason.
+
+--Optimization: Don't need to do select at all on receive if timeout 0
+  (using MSG_DONTWAIT anyway).  select was found to be a hotspot with profiler.
+
+--Optimization: Profiler found 26% of non-idle time spent recomputing heat
+  maps.  We were taking another step through list of players each time new
+  messages arrived, meaning that we were looping through them faster and faster
+  during busy times (in one estimate, processing heat maps for 130 players
+  every second).  Now we process them at a fixed max rate, regardless of
+  incoming message rate, of 2 players every 0.1 seconds (20 players per second
+  during active times).
+
+--Optimization: Exposed getMapObjectRaw externally so recomputeHeatMap can use
+   it to avoid wasting cycles checking for decaying objects.
+
+--Optimization: We were checking what each player was crossing every server
+  step (and server steps happen faster and faster as the inbound message rate
+  increases).  Fixed to only check what a player is crossing every 0.25 seconds.
+
+--Removed a wayward continue.
+
+--Optimization:  Don't check curse settings every stepCurses call.
+
+--Optimization:  Only execute certain non-reactive parts of server step loop
+  once every 0.25 seconds at most, not every loop (loop can run very fast when
+  a lot of messages are coming in.
+
+
+
 Version 193     2019-January-17
 
 --Code for transmission of speech through speech pipe objects.
