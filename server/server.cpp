@@ -66,7 +66,7 @@ static JenkinsRandomSource randSource;
 #include "../gameSource/GridPos.h"
 
 
-#define HEAT_MAP_D 10
+#define HEAT_MAP_D 8
 
 float targetHeat = 10;
 
@@ -476,6 +476,23 @@ typedef struct LiveObject {
 
 SimpleVector<LiveObject> players;
 SimpleVector<LiveObject> tutorialLoadingPlayers;
+
+
+
+static char checkReadOnly() {
+    const char *testFileName = "testReadOnly.txt";
+    
+    FILE *testFile = fopen( testFileName, "w" );
+    
+    if( testFile != NULL ) {
+        
+        fclose( testFile );
+        remove( testFileName );
+        return false;
+        }
+    return true;
+    }
+
 
 
 
@@ -1949,7 +1966,7 @@ static double lastPeriodicStepTime = 0;
 
 
 // recompute heat for fixed number of players per timestep
-static int numPlayersRecomputeHeatPerStep = 2;
+static int numPlayersRecomputeHeatPerStep = 8;
 static int lastPlayerIndexHeatRecomputed = -1;
 static double lastHeatUpdateTime = 0;
 static double heatUpdateTimeStep = 0.1;
@@ -6649,6 +6666,12 @@ void setNoLongerDying( LiveObject *inPlayer,
 
 int main() {
 
+    if( checkReadOnly() ) {
+        printf( "File system read-only.  Server exiting.\n" );
+        return 1;
+        }
+    
+
     memset( allowedSayCharMap, false, 256 );
     
     int numAllowed = strlen( allowedSayChars );
@@ -6919,6 +6942,21 @@ int main() {
             shutdownMode = SettingsManager::getIntSetting( "shutdownMode", 0 );
             forceShutdownMode = 
                 SettingsManager::getIntSetting( "forceShutdownMode", 0 );
+            
+            if( checkReadOnly() ) {
+                // read-only file system causes all kinds of weird 
+                // behavior
+                // shut this server down NOW
+                printf( "File system read only, forcing server shutdown.\n" );
+
+                // force-run cron script one time here
+                // this will send warning email to admin
+                // (cron jobs stop running if filesystem read-only)
+                system( "../scripts/checkServerRunningCron.sh" );
+
+                shutdownMode = 1;
+                forceShutdownMode = 1;
+                }
             }
         
         
