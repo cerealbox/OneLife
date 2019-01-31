@@ -5392,6 +5392,26 @@ static char equal( GridPos inA, GridPos inB ) {
 
 
 
+static char tooClose( GridPos inA, GridPos inB, int inMinComponentDistance ) {
+    int xDist = inA.x - inB.x;
+    if( xDist < 0 ) {
+        xDist = -xDist;
+        }
+    int yDist = inA.y - inB.y;
+    if( yDist < 0 ) {
+        yDist = -yDist;
+        }
+    
+    if( xDist < inMinComponentDistance &&
+        yDist < inMinComponentDistance ) {
+        return true;
+        }
+    return false;
+    }
+    
+
+
+
 static int findGridPos( SimpleVector<GridPos> *inList, GridPos inP ) {
     for( int i=0; i<inList->size(); i++ ) {
         GridPos q = inList->getElementDirect( i );
@@ -5430,7 +5450,8 @@ void setMapObjectRaw( int inX, int inY, int inID ) {
         for( int i=0; i<flightLandingPos.size(); i++ ) {
             GridPos otherP = flightLandingPos.getElementDirect( i );
             
-            if( equal( otherP, p ) ) {
+            // any new strip w/ 250,250 manhattan distance doesn't count
+            if( tooClose( otherP, p, 250 ) ) {
                 found = true;
                 break;
                 }
@@ -7024,14 +7045,46 @@ GridPos getNextFlightLandingPos( int inCurrentX, int inCurrentY ) {
 
     
     if( closestIndex != -1 && flightLandingPos.size() > 1 ) {
-    
+        // found closest, and there's more than one
+        // look for next valid position in order
+
         int nextIndex = closestIndex + 1;
         
         if( nextIndex >= flightLandingPos.size() ) {
             nextIndex = 0;
             }
+        
+        GridPos nextPos = flightLandingPos.getElementDirect( nextIndex );
 
-        return flightLandingPos.getElementDirect( nextIndex );
+        while( ! equal( nextPos, closestPos ) ) {
+            
+            int oID = getMapObject( nextPos.x, nextPos.y );
+            
+            if( oID > 0 &&
+                getObject( oID )->isFlightLanding ) {
+                
+                return nextPos;
+                }
+            
+            // no longer valid landing pos
+            // remove from list
+            flightLandingPos.deleteElement( nextIndex );
+            
+            // keep looking
+            if( nextIndex >= flightLandingPos.size() ) {
+                nextIndex = 0;
+                }
+        
+            nextPos = flightLandingPos.getElementDirect( nextIndex );
+            }
+
+        // if we got here, we never found a nextPos that was valid
+        // closestPos is only option
+        return closestPos;
+        }
+    else if( closestIndex != -1 && flightLandingPos.size() == 1 ) {
+        // land at closest, only option
+        return closestPos;
         }
     
     // got here, no place to land

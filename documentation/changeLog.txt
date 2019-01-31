@@ -15,6 +15,8 @@ Version 195     ???
 
 --Editor supports baking sprites that include color-adjusted sprite layers.
 
+--Support for long-distance flying.
+
 
 
 Server Fixes
@@ -65,6 +67,11 @@ Server Fixes
   seconds.  Upped it to 80 players per second (each player gets updated every
   2.5 seconds when there are 200 players).  Also shrunk dimensions of heat map
   from 10x10 down to 8x8 (64% of original size, thus lowering computation load).
+
+--A bunch of places in code were calling computePartialMoveSpot without
+  checking whether player is moving first.  This allows a stale move path to
+  get queried when player no longer moving (example:  flight destination
+  reached).
 
 
 
