@@ -10182,7 +10182,9 @@ void LivingLifePage::step() {
         else if( type == SEQUENCE_NUMBER ) {
             // need to respond with LOGIN message
             
-            int number = 0;
+            // in future versions of protocol,
+            // sequence number will be a nonce, and won't just be a pure number
+            char numberString[200];
 
             // we don't use these for anything in client
             int currentPlayers = 0;
@@ -10192,8 +10194,8 @@ void LivingLifePage::step() {
             sscanf( message, 
                     "SN\n"
                     "%d/%d\n"
-                    "%d\n"
-                    "%d\n", &currentPlayers, &maxPlayers, &number, 
+                    "%199s\n"
+                    "%d\n", &currentPlayers, &maxPlayers, numberString, 
                     &mRequiredVersion );
             
 
@@ -10237,8 +10239,6 @@ void LivingLifePage::step() {
                 password = stringDuplicate( "x" );
                 }
             
-            char *numberString = autoSprintf( "%d", number );
-
 
             char *pwHash = hmac_sha1( password, numberString );
 
@@ -10246,7 +10246,6 @@ void LivingLifePage::step() {
             
             delete [] pureKey;
             delete [] password;
-            delete [] numberString;
             
             
             // we record the number of characters sent for playback
@@ -10491,6 +10490,9 @@ void LivingLifePage::step() {
                         mDoneLoadingFirstObjectSet = false;
                         mFirstObjectSetLoadingProgress = 0;
                         mPlayerInFlight = true;
+
+                        // home markers invalid now
+                        homePosStack.deleteAll();
                         }
                     }
                 }            
