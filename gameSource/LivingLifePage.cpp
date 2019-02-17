@@ -127,10 +127,33 @@ static char savingSpeechNumber = 1;
 static double emotDuration = 10;
 
 
+static int historyGraphLength = 100;
+
 static char showFPS = false;
 static double frameBatchMeasureStartTime = -1;
 static int framesInBatch = 0;
 static double fpsToDraw = -1;
+
+static SimpleVector<double> fpsHistoryGraph;
+
+
+static char showNet = false;
+static double netBatchMeasureStartTime = -1;
+static int messagesInPerSec = -1;
+static int messagesOutPerSec = -1;
+static int bytesInPerSec = -1;
+static int bytesOutPerSec = -1;
+static int messagesInCount = 0;
+static int messagesOutCount = 0;
+static int bytesInCount = 0;
+static int bytesOutCount = 0;
+
+static SimpleVector<double> messagesInHistoryGraph;
+static SimpleVector<double> messagesOutHistoryGraph;
+static SimpleVector<double> bytesInHistoryGraph;
+static SimpleVector<double> bytesOutHistoryGraph;
+
+
 
 static char showPing = false;
 static double pingSentTime = -1;
@@ -578,7 +601,8 @@ static char readServerSocketFull( int inServerSocket ) {
         
         serverSocketBuffer.appendArray( buffer, numRead );
         numServerBytesRead += numRead;
-
+        bytesInCount += numRead;
+        
         numRead = readFromSocket( inServerSocket, buffer, 512 );
         }    
 
@@ -611,6 +635,9 @@ void LivingLifePage::sendToServerSocket( char *inMessage ) {
     if( numSent == len ) {
         numServerBytesSent += len;
         overheadServerBytesSent += 52;
+        
+        messagesOutCount++;
+        bytesOutCount += len;
         }
     else {
         printf( "Failed to send message to server socket "
@@ -975,6 +1002,8 @@ char *getNextServerMessageRaw() {
             char *returnMessage = pendingMapChunkMessage;
             pendingMapChunkMessage = NULL;
 
+            messagesInCount++;
+
             return returnMessage;
             }
         else {
@@ -1015,6 +1044,7 @@ char *getNextServerMessageRaw() {
                 
                 delete [] decompressedMessage;
                 
+                messagesInCount++;
                 return textMessage;
                 }
             }
@@ -1081,6 +1111,7 @@ char *getNextServerMessageRaw() {
         return NULL;
         }
     else {
+        messagesInCount++;
         return message;
         }
     }
@@ -1117,7 +1148,7 @@ char *getNextServerMessage() {
             
             char *message = getNextServerMessageRaw();
             
-            if( message != NULL ) {
+            while( message != NULL ) {
                 messageType t = getMessageType( message );
                 
                 if( strstr( message, "FM" ) == message ) {
@@ -1126,6 +1157,11 @@ char *getNextServerMessage() {
                     
                     if( serverFrameMessages.size() > 0 ) {
                         serverFrameReady = true;
+                        // see end of frame, stop reading more messages
+                        // for now (they are part of next frame)
+                        // and start returning message to caller from
+                        // this frame
+                        break;
                         }
                     }
                 else if( t == MAP_CHUNK ||
@@ -1149,6 +1185,10 @@ char *getNextServerMessage() {
                     // keep it
                     serverFrameMessages.push_back( message );
                     }
+                
+                // keep reading messages, until we either see the 
+                // end of the frame or read all available messages
+                message = getNextServerMessageRaw();
                 }
             }
 
@@ -4236,6 +4276,65 @@ static char isInBounds( int inX, int inY, int inMapD ) {
 
 
 
+static void drawFixedShadowString( const char *inString, doublePair inPos ) {
+    
+    setDrawColor( 0, 0, 0, 1 );
+    numbersFontFixed->drawString( inString, inPos, alignLeft );
+            
+    setDrawColor( 1, 1, 1, 1 );
+            
+    inPos.x += 2;
+    inPos.y -= 2;
+    numbersFontFixed->drawString( inString, inPos, alignLeft );
+    }
+
+
+static void addToGraph( SimpleVector<double> *inHistory, double inValue ) {
+    inHistory->push_back( inValue );
+                
+    while( inHistory->size() > historyGraphLength ) {
+        inHistory->deleteElement( 0 );
+        }
+    }
+
+
+
+static void drawGraph( SimpleVector<double> *inHistory, doublePair inPos,
+                       FloatColor inColor ) {
+    double max = 0;
+    for( int i=0; i<inHistory->size(); i++ ) {
+        double val = inHistory->getElementDirect( i );
+        if( val > max ) {
+            max = val;
+            }
+        }
+
+    setDrawColor( 0, 0, 0, 0.5 );
+
+    double graphHeight = 40;
+
+    drawRect( inPos.x - 2, 
+              inPos.y - 2,
+              inPos.x + historyGraphLength + 2,
+              inPos.y + graphHeight + 2 );
+        
+    
+
+    setDrawColor( inColor.r, inColor.g, inColor.b, 0.75 );
+    for( int i=0; i<inHistory->size(); i++ ) {
+        double val = inHistory->getElementDirect( i );
+
+        double scaledVal = val / max;
+        
+        drawRect( inPos.x + i, 
+                  inPos.y,
+                  inPos.x + i + 1,
+                  inPos.y + scaledVal * graphHeight );
+        }
+    }
+
+
+
 typedef struct DrawOrderRecord {
         char person;
         // if person
@@ -6620,7 +6719,15 @@ void LivingLifePage::draw( doublePair inViewCenter,
         }    
         
     if( showFPS ) {
+            
+        doublePair pos = lastScreenViewCenter;
+        pos.x -= 600;
+        pos.y += 300;
         
+        if( mTutorialNumber > 0 ) {
+            pos.y -= 50;
+            }
+
         if( frameBatchMeasureStartTime == -1 ) {
             frameBatchMeasureStartTime = game_getCurrentTime();
             }
@@ -6634,30 +6741,123 @@ void LivingLifePage::draw( doublePair inViewCenter,
             
                 fpsToDraw = framesInBatch / delta;
                 
+                addToGraph( &fpsHistoryGraph, fpsToDraw );
+                
                 // new batch
                 frameBatchMeasureStartTime = game_getCurrentTime();
                 framesInBatch = 0;
                 }
             }
         if( fpsToDraw != -1 ) {
-            
-            doublePair pos = lastScreenViewCenter;
-            pos.x -= 600;
-            pos.y += 300;
-            
+        
             char *fpsString = 
                 autoSprintf( "%.1f %s", fpsToDraw, translate( "fps" ) );
             
-            setDrawColor( 0, 0, 0, 1 );
-            numbersFontFixed->drawString( fpsString, pos, alignLeft );
+            drawFixedShadowString( fpsString, pos );
             
-            setDrawColor( 1, 1, 1, 1 );
+            pos.x += 20 + numbersFontFixed->measureString( fpsString );
+            pos.y -= 20;
             
-            pos.x += 2;
-            pos.y -= 2;
-            numbersFontFixed->drawString( fpsString, pos, alignLeft );
-            
+            FloatColor yellow = { 1, 1, 0, 1 };
+            drawGraph( &fpsHistoryGraph, pos, yellow );
+
             delete [] fpsString;
+            }
+        else {
+            drawFixedShadowString( translate( "fpsPending" ), pos );
+            }
+        }
+    
+    if( showNet ) {
+        doublePair pos = lastScreenViewCenter;
+        pos.x -= 600;
+        pos.y += 300;
+        
+        if( showFPS ) {
+            pos.y -= 50;
+            }
+        // covered by tutorial sheets
+        if( mTutorialNumber > 0 ) {
+            pos.y -= 50;
+            }
+
+        double curTime = game_getCurrentTime();
+        
+        if( netBatchMeasureStartTime == -1 ) {
+            netBatchMeasureStartTime = curTime;
+            }
+        else {
+            
+            double batchLength = curTime - netBatchMeasureStartTime;
+            
+            if( batchLength >= 1.0 ) {
+                // full batch
+
+                messagesInPerSec = lrint( messagesInCount / batchLength );
+                messagesOutPerSec = lrint( messagesOutCount / batchLength );
+
+                bytesInPerSec = lrint( bytesInCount / batchLength );
+                bytesOutPerSec = lrint( bytesOutCount / batchLength );
+                
+                
+                addToGraph( &messagesInHistoryGraph, messagesInPerSec );
+                addToGraph( &messagesOutHistoryGraph, messagesOutPerSec );
+                addToGraph( &bytesInHistoryGraph, bytesInPerSec );
+                addToGraph( &bytesOutHistoryGraph, bytesOutPerSec );
+
+
+                // new batch
+                messagesInCount = 0;
+                messagesOutCount = 0;
+                bytesInCount = 0;
+                bytesOutCount = 0;
+                
+                netBatchMeasureStartTime = curTime;
+                }
+            }
+        
+        if( messagesInPerSec != -1 ) {
+            char *netStringA = 
+                autoSprintf( translate( "netStringA" ), 
+                             messagesOutPerSec, messagesInPerSec );
+            char *netStringB = 
+                autoSprintf( translate( "netStringB" ), 
+                             bytesOutPerSec, bytesInPerSec );
+            
+            drawFixedShadowString( netStringA, pos );
+            
+            doublePair graphPos = pos;
+            
+            graphPos.x += 20 + numbersFontFixed->measureString( netStringA );
+            graphPos.y -= 20;
+
+            FloatColor yellow = { 1, 1, 0, 1 };
+            drawGraph( &messagesOutHistoryGraph, graphPos, yellow );
+
+            graphPos.x += historyGraphLength + 10;
+            drawGraph( &messagesInHistoryGraph, graphPos, yellow );
+
+            pos.y -= 50;
+            
+            drawFixedShadowString( netStringB, pos );
+            
+            graphPos = pos;
+            
+            graphPos.x += 20 + numbersFontFixed->measureString( netStringB );
+            graphPos.y -= 20;
+
+            drawGraph( &bytesOutHistoryGraph, graphPos, yellow );
+
+            graphPos.x += historyGraphLength + 10;
+            drawGraph( &bytesInHistoryGraph, graphPos, yellow );
+
+
+
+            delete [] netStringA;
+            delete [] netStringB;
+            }
+        else {
+            drawFixedShadowString( translate( "netPending" ), pos );
             }
         }
     
@@ -6671,6 +6871,10 @@ void LivingLifePage::draw( doublePair inViewCenter,
         pos.x += 300;
         pos.y += 300;
         
+        if( mTutorialNumber > 0 ) {
+            pos.y -= 50;
+            }
+
         char *pingString;
         
         if( pongDeltaTime == -1 ) {
@@ -6683,15 +6887,8 @@ void LivingLifePage::draw( doublePair inViewCenter,
                              lrint( pongDeltaTime * 1000 ), 
                              translate( "ms" ) );
             }
-        
-        setDrawColor( 0, 0, 0, 1 );
-        numbersFontFixed->drawString( pingString, pos, alignLeft );
-            
-        setDrawColor( 1, 1, 1, 1 );
-            
-        pos.x += 2;
-        pos.y -= 2;
-        numbersFontFixed->drawString( pingString, pos, alignLeft );
+
+        drawFixedShadowString( pingString, pos );
             
         delete [] pingString;
     
@@ -10182,9 +10379,7 @@ void LivingLifePage::step() {
         else if( type == SEQUENCE_NUMBER ) {
             // need to respond with LOGIN message
             
-            // in future versions of protocol,
-            // sequence number will be a nonce, and won't just be a pure number
-            char numberString[200];
+            char challengeString[200];
 
             // we don't use these for anything in client
             int currentPlayers = 0;
@@ -10195,7 +10390,7 @@ void LivingLifePage::step() {
                     "SN\n"
                     "%d/%d\n"
                     "%199s\n"
-                    "%d\n", &currentPlayers, &maxPlayers, numberString, 
+                    "%d\n", &currentPlayers, &maxPlayers, challengeString, 
                     &mRequiredVersion );
             
 
@@ -10240,9 +10435,9 @@ void LivingLifePage::step() {
                 }
             
 
-            char *pwHash = hmac_sha1( password, numberString );
+            char *pwHash = hmac_sha1( password, challengeString );
 
-            char *keyHash = hmac_sha1( pureKey, numberString );
+            char *keyHash = hmac_sha1( pureKey, challengeString );
             
             delete [] pureKey;
             delete [] password;
@@ -16530,6 +16725,7 @@ void LivingLifePage::makeActive( char inFresh ) {
     mPlayerInFlight = false;
     
     showFPS = false;
+    showNet = false;
     showPing = false;
     
     waitForFrameMessages = false;
@@ -19164,6 +19360,20 @@ void LivingLifePage::keyDown( unsigned char inASCII ) {
                                 frameBatchMeasureStartTime = -1;
                                 framesInBatch = 0;
                                 fpsToDraw = -1;
+                                }
+                            else if( strstr( typedText,
+                                             translate( "netCommand" ) ) 
+                                     == typedText ) {
+                                showNet = !showNet;
+                                netBatchMeasureStartTime = -1;
+                                messagesInPerSec = -1;
+                                messagesOutPerSec = -1;
+                                bytesInPerSec = -1;
+                                bytesOutPerSec = -1;
+                                messagesInCount = 0;
+                                messagesOutCount = 0;
+                                bytesInCount = 0;
+                                bytesOutCount = 0;
                                 }
                             else if( strstr( typedText,
                                              translate( "pingCommand" ) ) 
