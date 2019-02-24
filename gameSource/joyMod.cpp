@@ -21,6 +21,9 @@ static bool ignoreNextDPadUp = false;
 void LivingLifePage::joyDPadDown(int dir) {
 
     LiveObject *ourLiveObject = getOurLiveObject();
+    if (!ourLiveObject)
+        return;
+
     int x = (int) (ourLiveObject->currentPos.x * CELL_D); //currentPos is the world grid location of player.
     int y = (int) (ourLiveObject->currentPos.y * CELL_D);
     //fprintf(stderr, "dpad down - player pos: %d, %d\n", x, y);
@@ -107,6 +110,9 @@ void LivingLifePage::joyDPadUp() {
 
     // retrieve character position:
     LiveObject *ourLiveObject = getOurLiveObject();
+    if (!ourLiveObject)
+        return;
+    
     // @TODO: make x = x * CELL_D as that is how i always use it.
     //int x = (int) ourLiveObject->currentPos.x; //currentPos is the world grid location.
     //int y = (int) ourLiveObject->currentPos.y;
@@ -154,6 +160,8 @@ void LivingLifePage::joyButtonUp(int button) {
 
     // retrieve character position:
     LiveObject *ourLiveObject = getOurLiveObject();
+    if (!ourLiveObject)
+        return;
 
     // store x,y pixel position of player:
     int x = (int) (ourLiveObject->currentPos.x * CELL_D); //currentPos is the world grid location of player.
