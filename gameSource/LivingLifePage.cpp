@@ -44,6 +44,14 @@
 
 #include <stdlib.h>//#include <math.h>
 
+
+#define OHOL_NON_EDITOR 1
+#include "ObjectPickable.h"
+
+static ObjectPickable objectPickable;
+
+
+
 #define MAP_D 64
 #define MAP_NUM_CELLS 4096
 
@@ -84,6 +92,12 @@ extern int userTwinCount;
 
 extern char userReconnect;
 
+static char vogMode = false;
+static doublePair vogPos = { 0, 0 };
+
+static char vogPickerOn = false;
+
+    
 
 extern float musicLoudness;
 
@@ -838,6 +852,7 @@ typedef enum messageType {
     GRAVE,
     GRAVE_MOVE,
     FLIGHT_DEST,
+    VOG_UPDATE,
     FORCED_SHUTDOWN,
     PONG,
     COMPRESSED_MESSAGE,
@@ -946,6 +961,9 @@ messageType getMessageType( char *inMessage ) {
         }
     else if( strcmp( copy, "FD" ) == 0 ) {
         returnValue = FLIGHT_DEST;
+        }
+    else if( strcmp( copy, "VU" ) == 0 ) {
+        returnValue = VOG_UPDATE;
         }
     else if( strcmp( copy, "PONG" ) == 0 ) {
         returnValue = PONG;
@@ -1968,7 +1986,8 @@ LivingLifePage::LivingLifePage()
           mDeathReason( NULL ),
           mShowHighlights( true ),
           mUsingSteam( false ),
-          mZKeyDown( false ) {
+          mZKeyDown( false ),
+          mObjectPicker( &objectPickable, +510, 90 ) {
 
 
     if( SettingsManager::getIntSetting( "useSteamUpdate", 0 ) ) {
@@ -8040,7 +8059,12 @@ void LivingLifePage::draw( doublePair inViewCenter,
             drawMessage( "bugMessage2", messagePos );
             }
         }
+
     
+    if( vogMode ) {
+        // draw again, so we can see picker
+        PageComponent::base_draw( inViewCenter, inViewSize );
+        }
     }
 
 
@@ -10690,6 +10714,30 @@ void LivingLifePage::step() {
                         }
                     }
                 }            
+            }
+        else if( type == VOG_UPDATE ) {
+            int posX, posY;
+            
+            int numRead = sscanf( message, "VU\n%d %d",
+                                  &posX, &posY );
+            if( numRead == 2 ) {
+                vogPos.x = posX;
+                vogPos.y = posY;
+
+                mObjectPicker.setPosition( vogPos.x * CELL_D + 510,
+                                           vogPos.y * CELL_D + 90 );
+
+                // jump camp instantly
+                lastScreenViewCenter.x = posX * CELL_D;
+                lastScreenViewCenter.y = posY * CELL_D;
+                setViewCenterPosition( lastScreenViewCenter.x,
+                                       lastScreenViewCenter.y );
+
+                mCurMouseOverCellFade = 1.0;
+                
+                mCurMouseOverCell.x = vogPos.x - mMapOffsetX + mMapD / 2;
+                mCurMouseOverCell.y = vogPos.y - mMapOffsetY + mMapD / 2;
+                }
             }
         else if( type == MAP_CHUNK ) {
             
@@ -15496,6 +15544,10 @@ void LivingLifePage::step() {
             // eve has a larger say limit
             sayCap = 30;
             }
+        if( vogMode ) {
+            sayCap = 200;
+            }
+        
         char *currentText = mSayField.getText();
         
         if( strlen( currentText ) > 0 && currentText[0] == '/' ) {
@@ -15522,12 +15574,22 @@ void LivingLifePage::step() {
                 }
             }
         
-
-        doublePair screenTargetPos = 
-            mult( cameraFollowsObject->currentPos, CELL_D );
+        doublePair targetObjectPos = cameraFollowsObject->currentPos;
+        
+        if( vogMode ) {
+            targetObjectPos = vogPos;
+            }
         
 
-        if( cameraFollowsObject->currentPos.x != cameraFollowsObject->xd
+
+        doublePair screenTargetPos = 
+            mult( targetObjectPos, CELL_D );
+        
+        if( vogMode ) {
+            // don't adjust camera
+            }
+        else if( 
+            cameraFollowsObject->currentPos.x != cameraFollowsObject->xd
             ||
             cameraFollowsObject->currentPos.y != cameraFollowsObject->yd ) {
             
@@ -15617,14 +15679,16 @@ void LivingLifePage::step() {
             
             }
 
-
-        screenTargetPos.x = 
-            CELL_D * cameraFollowsObject->currentPos.x - 
-            screenCenterPlayerOffsetX;
-        
-        screenTargetPos.y = 
-            CELL_D * cameraFollowsObject->currentPos.y - 
-            screenCenterPlayerOffsetY;
+        if( ! vogMode ) {
+            
+            screenTargetPos.x = 
+                CELL_D * targetObjectPos.x - 
+                screenCenterPlayerOffsetX;
+            
+            screenTargetPos.y = 
+                CELL_D * targetObjectPos.y - 
+                screenCenterPlayerOffsetY;
+            }
         
 
         // whole pixels
@@ -16674,7 +16738,11 @@ char LivingLifePage::isSameFloor( int inFloor, GridPos inFloorPos,
                             
     int nextMapI = getMapIndex( nextStep.x, nextStep.y );
                             
-    if( nextMapI != -1 && 
+    if( nextMapI != -1 
+        && 
+        ( mMap[ nextMapI ] <= 0 ||
+          ! getObject( mMap[ nextMapI ] )->blocksWalking )
+        &&
         mMapFloors[ nextMapI ] == inFloor ) {
         return true;
         }
@@ -16728,6 +16796,8 @@ void LivingLifePage::makeActive( char inFresh ) {
     clearLocationSpeech();
 
     mPlayerInFlight = false;
+    
+    vogMode = false;
     
     showFPS = false;
     showNet = false;
@@ -17712,6 +17782,10 @@ void LivingLifePage::pointerDown( float inX, float inY ) {
     
     if( mServerSocket == -1 ) {
         // dead
+        return;
+        }
+    
+    if( vogMode ) {
         return;
         }
 
@@ -18760,7 +18834,16 @@ void LivingLifePage::pointerDown( float inX, float inY ) {
                     
                     TransRecord *bareHandTrans = getTrans( 0, destID );
                     
-                    if( bareHandTrans != NULL ) {
+                    if( bareHandTrans != NULL &&
+                        bareHandTrans->newTarget != 0 ) {
+                        
+                        // bare hand trans exists, and it's NOT just a
+                        // direct "pickup" trans that should always be applied
+                        // (from target to new actor)
+                        // The bare hand trans leaves something on the ground
+                        // meaning that it is transformational (removing
+                        // a plate from a stack, tweaking something, etc.)
+
                         if( modClick ) {
                             action = "USE";
                             }
@@ -19149,6 +19232,65 @@ void LivingLifePage::keyDown( unsigned char inASCII ) {
             getOurLiveObject()->age -= 1;
             break;
         */
+        case 'V':
+            if( ! mSayField.isFocused() &&
+                serverSocketConnected &&
+                SettingsManager::getIntSetting( "vogModeOn", 0 ) ) {
+                
+                if( ! vogMode ) {
+                    sendToServerSocket( (char*)"VOGS 0 0#" );
+                    vogMode = true;
+                    vogPos = getOurLiveObject()->currentPos;
+                    vogPickerOn = false;
+                    mObjectPicker.setPosition( vogPos.x * CELL_D + 510,
+                                               vogPos.y * CELL_D + 90 );
+                    
+                    // jump camp instantly
+                    lastScreenViewCenter.x = vogPos.x * CELL_D;
+                    lastScreenViewCenter.y = vogPos.y * CELL_D;
+                    setViewCenterPosition( lastScreenViewCenter.x,
+                                           lastScreenViewCenter.y );
+                    }
+                else {
+                    sendToServerSocket( (char*)"VOGX 0 0#" );
+                    vogMode = false;
+                    if( vogPickerOn ) {
+                        removeComponent( &mObjectPicker );
+                        mObjectPicker.removeActionListener( this );
+                        }
+                    vogPickerOn = false;
+                    }
+                }
+            break;
+        case 'I':
+            if( ! mSayField.isFocused() &&
+                vogMode ) {
+                
+                if( ! vogPickerOn ) {
+                    addComponent( &mObjectPicker );
+                    mObjectPicker.addActionListener( this );
+                    }
+                else {
+                    removeComponent( &mObjectPicker );
+                    mObjectPicker.removeActionListener( this );    
+                    }
+                vogPickerOn = ! vogPickerOn;
+                }
+            break;
+        case 'N':
+            if( ! mSayField.isFocused() &&
+                serverSocketConnected &&
+                vogMode ) {
+                sendToServerSocket( (char*)"VOGP 0 0#" );
+                }
+            break;
+        case 'M':
+            if( ! mSayField.isFocused() &&
+                serverSocketConnected &&
+                vogMode ) {
+                sendToServerSocket( (char*)"VOGN 0 0#" );
+                }
+            break;
         case 'S':
             if( savingSpeechEnabled && 
                 ! mSayField.isFocused() ) {
@@ -19280,12 +19422,12 @@ void LivingLifePage::keyDown( unsigned char inASCII ) {
             break;
         case 13:  // enter
             // speak
-            if( ! mSayField.isFocused() ) {
+            if( ! TextField::isAnyFocused() ) {
                 
                 mSayField.setText( "" );
                 mSayField.focus();
                 }
-            else {
+            else if( mSayField.isFocused() ) {
                 char *typedText = mSayField.getText();
                 
                 
@@ -19429,9 +19571,16 @@ void LivingLifePage::keyDown( unsigned char inASCII ) {
                         }
                     else {
                         // send text to server
+
+                        const char *sayCommand = "SAY";
+                        
+                        if( vogMode ) {
+                            sayCommand = "VOGT";
+                            }
+                        
                         char *message = 
-                            autoSprintf( "SAY 0 0 %s#",
-                                         typedText );
+                            autoSprintf( "%s 0 0 %s#",
+                                         sayCommand, typedText );
                         sendToServerSocket( message );
                         delete [] message;
                         }
@@ -19456,6 +19605,10 @@ void LivingLifePage::keyDown( unsigned char inASCII ) {
                 
                 delete [] typedText;
                 }
+            else if( vogMode ) {
+                // return to cursor control
+                TextField::unfocusAll();
+                }
             break;
         }
     }
@@ -19472,7 +19625,47 @@ void LivingLifePage::specialKeyDown( int inKeyCode ) {
         return;
         }
 
-    if( inKeyCode == MG_KEY_UP ||
+    if( vogMode && ! TextField::isAnyFocused() ) {
+        GridPos posOffset = { 0, 0 };
+        
+        int jump = 1;
+        
+        if( isCommandKeyDown() ) {
+            jump *= 2;
+            }
+        if( isShiftKeyDown() ) {
+            jump *= 5;
+            }
+
+        if( inKeyCode == MG_KEY_UP ) {
+            posOffset.y = jump;
+            }
+        else if( inKeyCode == MG_KEY_DOWN ) {
+            posOffset.y = -jump;
+            }
+        else if( inKeyCode == MG_KEY_LEFT ) {
+            posOffset.x = -jump;
+            }
+        else if( inKeyCode == MG_KEY_RIGHT ) {
+            posOffset.x = jump;
+            }
+
+        if( posOffset.x != 0 || posOffset.y != 0 ) {
+            
+            GridPos newPos;
+            newPos.x = vogPos.x;
+            newPos.y = vogPos.y;
+            
+            newPos.x += posOffset.x;
+            newPos.y += posOffset.y;
+            
+            char *message = autoSprintf( "VOGM %d %d#",
+                                         newPos.x, newPos.y );
+            sendToServerSocket( message );
+            delete [] message;
+            }
+        }
+    else if( inKeyCode == MG_KEY_UP ||
         inKeyCode == MG_KEY_DOWN ) {
         if( ! mSayField.isFocused() && inKeyCode == MG_KEY_UP ) {
             if( mSentChatPhrases.size() > 0 ) {
@@ -19601,7 +19794,28 @@ void LivingLifePage::keyUp( unsigned char inASCII ) {
 
     }
 
+
+
+
+void LivingLifePage::actionPerformed( GUIComponent *inTarget ) {
+    if( vogMode && inTarget == &mObjectPicker ) {
+
+        char rightClick;
+        int objectID = mObjectPicker.getSelectedObject( &rightClick );
         
+        if( objectID != -1 ) {
+            char *message = autoSprintf( "VOGI %d %d %d#",
+                                         lrint( vogPos.x ), 
+                                         lrint( vogPos.y ), objectID );
+            
+            sendToServerSocket( message );
+            
+            delete [] message;
+            }
+        }
+    }
+
+
 
 
 
